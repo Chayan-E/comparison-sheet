@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Advanced Margin Comparison Calculator</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background-color: #f4f4f4; }
+    .highlight-L1 { background-color: #c8e6c9; font-weight: bold; }
+    .highlight-L2 { background-color: #fff9c4; font-weight: bold; }
+    .highlight-L3 { background-color: #ffcdd2; font-weight: bold; }
+    .error { color: red; font-size: 12px; }
+    .buttons { margin-top: 15px; }
+    @media (max-width: 768px) {
+      table, thead, tbody, th, td, tr { display: block; }
+      th, td { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+
+<h3>Advanced Margin Comparison Calculator</h3>
+
+<table id="productTable">
+  <thead>
+    <tr>
+      <th>Product Name</th><th>Group Name</th>
+      <th>Cost Price (Without GST)</th>
+      <th>MRP (Incl. GST)</th>
+      <th>GST %</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><input type="text" class="productName" placeholder="Product 1" /></td><td><input type="text" class="groupName" placeholder="Group (Optional)" /></td>
+      <td><input type="number" class="cost" /></td>
+      <td><input type="number" class="mrp" /></td>
+      <td>
+        <select class="gst">
+          <option value="0">0%</option>
+          <option value="5">5%</option>
+          <option value="12">12%</option>
+          <option value="18">18%</option>
+          <option value="28">28%</option>
+        </select>
+      </td>
+      <td>
+        <button onclick="duplicateRow(this)">Duplicate</button>
+        <button onclick="deleteRow(this)" style="color:red; font-weight:bold;">&#10006;</button>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="buttons">
+  <button onclick="addRow()">Add Product</button>
+  <button onclick="compareMargins()">Compare Margins</button>
+  <button onclick="exportTable()">Export to Excel</button>
+  <button onclick="downloadPDF()">Download PDF</button>
+  <button onclick="resetTable()">Reset</button>
+  <button onclick="printComparison()">Print</button>
+</div>
+
+<div id="comparisonResult" style="margin-top:20px;"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+function addRow() {
+  const table = document.getElementById('productTable').getElementsByTagName('tbody')[0];
+  const newRow = table.insertRow();
+  newRow.innerHTML = `
+    <td><input type="text" class="productName" placeholder="Product" /></td><td><input type="text" class="groupName" placeholder="Group (Optional)" /></td>
+    <td><input type="number" class="cost" /></td>
+    <td><input type="number" class="mrp" /></td>
+    <td>
+      <select class="gst">
+        <option value="0">0%</option>
+        <option value="5">5%</option>
+        <option value="12">12%</option>
+        <option value="18">18%</option>
+        <option value="28">28%</option>
+      </select>
+    </td>
+    <td>
+      <button onclick="duplicateRow(this)">Duplicate</button>
+      <button onclick="deleteRow(this)" style="color:red; font-weight:bold;">&#10006;</button>
+    </td>
+  `;
+  saveData();
+}
+
+function deleteRow(btn) {
+  const row = btn.parentNode.parentNode;
+  row.parentNode.removeChild(row);
+  saveData();
+}
+
+function duplicateRow(btn) {
+  const row = btn.parentNode.parentNode;
+  const newRow = row.cloneNode(true);
+  row.parentNode.insertBefore(newRow, row.nextSibling);
+  saveData();
+}
+
+function resetTable() {
+  if (confirm("Are you sure you want to reset everything?")) {
+    const tableBody = document.getElementById('productTable').getElementsByTagName('tbody')[0];
+    tableBody.innerHTML = '';
+    localStorage.removeItem("marginData");
+    document.getElementById("comparisonResult").innerHTML = '';
+    addRow();
+  }
+}
+
+
+function printComparison() {
+  let element = document.getElementById('comparisonResult');
+  if (!element.innerHTML.trim()) {
+    alert("Please compare margins first!");
+    return;
+  }
+
+  let newWin = window.open('', '', 'width=800,height=600');
+  newWin.document.write('<html><head><title>Print Comparison</title>');
+  newWin.document.write('<style>table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #ccc; padding: 8px; text-align: center; } th { background-color: #f4f4f4; } .highlight-L1 { background-color: #c8e6c9; font-weight: bold; } .highlight-L2 { background-color: #fff9c4; font-weight: bold; } .highlight-L3 { background-color: #ffcdd2; font-weight: bold; }</style>');
+  newWin.document.write('</head><body>');
+  newWin.document.write(element.innerHTML);
+  newWin.document.write('</body></html>');
+  newWin.document.close();
+  newWin.print();
+}
+
+
+function calculateSingleMargin(cost, mrp, gst) {
+  let abatedMRP = mrp / (1 + gst / 100);
+  let marginValue = abatedMRP - cost;
+  let marginPercent = (marginValue / abatedMRP) * 100;
+  return { abatedMRP, marginValue, marginPercent };
+}
+
+function compareMargins() {
+  let rows = document.querySelectorAll("#productTable tbody tr");
+  let groups = {};
+  let noGroup = [];
+  let valid = true;
+
+  rows.forEach((row, index) => {
+    let productName = row.querySelector(".productName").value || `Product ${index+1}`;
+    let groupName = row.querySelector(".groupName").value.trim();
+    let cost = parseFloat(row.querySelector(".cost").value);
+    let mrp = parseFloat(row.querySelector(".mrp").value);
+    let gst = parseFloat(row.querySelector(".gst").value);
+
+    if (isNaN(cost) || isNaN(mrp) || isNaN(gst) || cost <= 0 || mrp <= 0 || gst < 0) {
+      valid = false;
+      return;
+    }
+    
+    let marginData = calculateSingleMargin(cost, mrp, gst);
+    let productData = {
+      productName,
+      groupName,
+      cost,
+      mrp,
+      gst,
+      ...marginData
+    };
+
+    if (groupName) {
+      if (!groups[groupName]) groups[groupName] = [];
+      groups[groupName].push(productData);
+    } else {
+      noGroup.push(productData);
+    }
+  });
+
+  if (!valid) {
+    document.getElementById("comparisonResult").innerHTML = "<span class='error'>Please enter valid positive numbers for all products!</span>";
+    return;
+  }
+
+  let resultHTML = "";
+
+  for (let group in groups) {
+    resultHTML += `<h4>Group: ${group}</h4>`;
+    groups[group].sort((a, b) => b.marginPercent - a.marginPercent);
+    resultHTML += "<table border='1' cellpadding='8' cellspacing='0'><thead><tr><th>Product Name</th><th>Cost Price</th><th>MRP</th><th>GST %</th><th>Abated MRP</th><th>Margin Value</th><th>Margin %</th><th>Rank</th></tr></thead><tbody>";
+    
+    groups[group].forEach((opt, index) => {
+      let rank = "L" + (index + 1);
+      let highlightClass = index === 0 ? "highlight-L1" : index === 1 ? "highlight-L2" : index === 2 ? "highlight-L3" : "";
+      resultHTML += `<tr class="${highlightClass}">
+        <td>${opt.productName}</td>
+        <td>₹${opt.cost.toFixed(2)}</td>
+        <td>₹${opt.mrp.toFixed(2)}</td>
+        <td>${opt.gst.toFixed(2)}%</td>
+        <td>₹${opt.abatedMRP.toFixed(2)}</td>
+        <td>₹${opt.marginValue.toFixed(2)}</td>
+        <td>${opt.marginPercent.toFixed(2)}%</td>
+        <td><strong>${rank}</strong></td>
+      </tr>`;
+    });
+
+    resultHTML += "</tbody></table><br/>";
+  }
+
+  if (noGroup.length) {
+    resultHTML += `<h4>Ungrouped Products</h4>`;
+    noGroup.sort((a, b) => b.marginPercent - a.marginPercent);
+    resultHTML += "<table border='1' cellpadding='8' cellspacing='0'><thead><tr><th>Product Name</th><th>Cost Price</th><th>MRP</th><th>GST %</th><th>Abated MRP</th><th>Margin Value</th><th>Margin %</th><th>Rank</th></tr></thead><tbody>";
+
+    noGroup.forEach((opt, index) => {
+      let rank = "L" + (index + 1);
+      let highlightClass = index === 0 ? "highlight-L1" : index === 1 ? "highlight-L2" : index === 2 ? "highlight-L3" : "";
+      resultHTML += `<tr class="${highlightClass}">
+        <td>${opt.productName}</td>
+        <td>₹${opt.cost.toFixed(2)}</td>
+        <td>₹${opt.mrp.toFixed(2)}</td>
+        <td>${opt.gst.toFixed(2)}%</td>
+        <td>₹${opt.abatedMRP.toFixed(2)}</td>
+        <td>₹${opt.marginValue.toFixed(2)}</td>
+        <td>${opt.marginPercent.toFixed(2)}%</td>
+        <td><strong>${rank}</strong></td>
+      </tr>`;
+    });
+
+    resultHTML += "</tbody></table><br/>";
+  }
+
+  document.getElementById("comparisonResult").innerHTML = resultHTML;
+  saveData();
+}
+
+function saveData() {
+  let rows = document.querySelectorAll("#productTable tbody tr");
+  let data = [];
+  rows.forEach(row => {
+    data.push({
+      groupName: row.querySelector('.groupName') ? row.querySelector('.groupName').value : '',
+      productName: row.querySelector(".productName").value,
+      cost: row.querySelector(".cost").value,
+      mrp: row.querySelector(".mrp").value,
+      gst: row.querySelector(".gst").value
+    });
+  });
+  localStorage.setItem("marginData", JSON.stringify(data));
+}
+
+function loadData() {
+  let savedData = JSON.parse(localStorage.getItem("marginData"));
+  if (savedData && savedData.length) {
+    const tableBody = document.getElementById('productTable').getElementsByTagName('tbody')[0];
+    tableBody.innerHTML = '';
+    savedData.forEach(d => {
+      let newRow = tableBody.insertRow();
+      newRow.innerHTML = `
+        <td><input type="text" class="productName" value="${d.productName}" /></td><td><input type="text" class="groupName" value="${d.groupName || ''}" placeholder="Group (Optional)" /></td>
+        <td><input type="number" class="cost" value="${d.cost}" /></td>
+        <td><input type="number" class="mrp" value="${d.mrp}" /></td>
+        <td>
+          <select class="gst">
+            <option value="0" ${d.gst == 0 ? 'selected' : ''}>0%</option>
+            <option value="5" ${d.gst == 5 ? 'selected' : ''}>5%</option>
+            <option value="12" ${d.gst == 12 ? 'selected' : ''}>12%</option>
+            <option value="18" ${d.gst == 18 ? 'selected' : ''}>18%</option>
+            <option value="28" ${d.gst == 28 ? 'selected' : ''}>28%</option>
+          </select>
+        </td>
+        <td>
+          <button onclick="duplicateRow(this)">Duplicate</button>
+          <button onclick="deleteRow(this)" style="color:red; font-weight:bold;">&#10006;</button>
+        </td>
+      `;
+    });
+  }
+}
+
+
+function exportTable() {
+  let resultDiv = document.getElementById('comparisonResult');
+  if (!resultDiv.innerHTML.trim()) {
+    alert("Please compare margins first!");
+    return;
+  }
+
+  let wb = XLSX.utils.book_new();
+  let tables = resultDiv.querySelectorAll("table");
+  tables.forEach((table, index) => {
+    let ws = XLSX.utils.table_to_sheet(table);
+    XLSX.utils.book_append_sheet(wb, ws, `Group ${index + 1}`);
+  });
+
+  XLSX.writeFile(wb, "Margin_Comparison.xlsx");
+}
+
+
+function downloadPDF() {
+  let element = document.getElementById('comparisonResult');
+  if (!element.innerHTML.trim()) {
+    alert("Please compare margins first!");
+    return;
+  }
+
+  html2canvas(element).then(canvas => {
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    let width = pdf.internal.pageSize.getWidth();
+    let height = (canvas.height * width) / canvas.width;
+    pdf.addImage(imgData, 'PNG', 0, 0, width, height);
+    pdf.save('Margin_Comparison.pdf');
+  });
+}
+
+
+window.onload = loadData;
+</script>
+
+</body>
+</html>
